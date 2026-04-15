@@ -1,4 +1,4 @@
-name: Alfred — Flight Finder
+name: Alfred — dispatches Miles (flight survey)
 
 on:
   schedule:
@@ -10,8 +10,8 @@ on:
   workflow_dispatch:   # manual trigger from GitHub Actions tab
 
 jobs:
-  find-flights:
-    name: Search & notify
+  miles-flight-survey:
+    name: Miles — flight search & notify
     runs-on: ubuntu-latest
 
     steps:
@@ -27,8 +27,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Alfred Flight Finder
-        working-directory: agents/flight_finder
+      - name: Dispatch Miles
+        working-directory: agents/miles
         env:
           TELEGRAM_BOT_TOKEN:        ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID_YULIIA:   ${{ secrets.TELEGRAM_CHAT_ID_YULIIA }}
