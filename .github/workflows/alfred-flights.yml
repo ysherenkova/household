@@ -2,12 +2,12 @@ name: Alfred — Flight Finder
 
 on:
   schedule:
-    # Twice daily (Atlanta is UTC-4 in summer / UTC-5 in winter)
-    # 09:00 ET  →  13:00 UTC
+    # Twice daily — Atlanta is UTC-4 (EDT) / UTC-5 (EST)
+    # 09:00 ET → 13:00 UTC
     - cron: "0 13 * * *"
-    # 21:00 ET  →  01:00 UTC (next day)
+    # 21:00 ET → 01:00 UTC
     - cron: "0 1 * * *"
-  workflow_dispatch:  # allow manual run from GitHub Actions tab
+  workflow_dispatch:   # manual trigger from GitHub Actions tab
 
 jobs:
   find-flights:
@@ -30,10 +30,7 @@ jobs:
       - name: Run Alfred Flight Finder
         working-directory: agents/flight_finder
         env:
-          AMADEUS_CLIENT_ID: ${{ secrets.AMADEUS_CLIENT_ID }}
-          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
-          AMADEUS_HOSTNAME: production
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID_YULIIA: ${{ secrets.TELEGRAM_CHAT_ID_YULIIA }}
-          TELEGRAM_CHAT_ID_IVAN: ${{ secrets.TELEGRAM_CHAT_ID_IVAN }}
+          TELEGRAM_BOT_TOKEN:        ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID_YULIIA:   ${{ secrets.TELEGRAM_CHAT_ID_YULIIA }}
+          TELEGRAM_CHAT_ID_IVAN:     ${{ secrets.TELEGRAM_CHAT_ID_IVAN }}
         run: python main.py

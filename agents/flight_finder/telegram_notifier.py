@@ -1,11 +1,11 @@
 """
 Alfred - Telegram Notifier
-Formats flight deals into a readable message and delivers it to all recipients.
+Formats deals into a tidy message and delivers it to both recipients.
 """
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 
@@ -15,11 +15,14 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
-AIRLINE_NAMES: dict[str, str] = {
-    "AA": "American", "DL": "Delta", "UA": "United", "WN": "Southwest",
-    "B6": "JetBlue", "AS": "Alaska", "NK": "Spirit", "F9": "Frontier",
-    "G4": "Allegiant", "SY": "Sun Country", "HA": "Hawaiian",
+FLAG = {
+    "US": "🇺🇸", "PR": "🇵🇷", "VI": "🇻🇮", "MX": "🇲🇽", "CA": "🇨🇦",
+    "BS": "🇧🇸", "JM": "🇯🇲", "DO": "🇩🇴", "BB": "🇧🇧", "TC": "🇹🇨",
+    "KY": "🇰🇾", "LC": "🇱🇨", "SX": "🇸🇽", "AW": "🇦🇼", "BZ": "🇧🇿",
+    "CR": "🇨🇷", "PA": "🇵🇦", "GT": "🇬🇹", "HN": "🇭🇳", "TT": "🇹🇹",
 }
+
+STOPS_LABEL = {0: "nonstop", 1: "1 stop", 2: "2 stops"}
 
 
 def _send(token: str, chat_id: str, text: str) -> bool:
@@ -30,53 +33,58 @@ def _send(token: str, chat_id: str, text: str) -> bool:
         timeout=10,
     )
     if not resp.ok:
-        logger.warning("Telegram send failed for %s: %s", chat_id, resp.text)
+        logger.warning("Telegram send to %s failed: %s", chat_id, resp.text[:200])
     return resp.ok
 
 
-def _airline_label(code: str) -> str:
-    return AIRLINE_NAMES.get(code, code)
-
-
-def _format_message(deals: list[FlightDeal]) -> str:
-    now = datetime.now().strftime("%b %d, %Y %H:%M")
+def _format(deals: list[FlightDeal]) -> str:
+    now = datetime.now(timezone.utc).strftime("%b %d, %Y %H:%M UTC")
 
     if not deals:
         return (
             "✈️ <b>Alfred's Flight Report</b>\n"
             f"<i>{now}</i>\n\n"
-            "No flights found matching all your criteria this run.\n"
-            "Criteria: ATL → anywhere • Fri after 17:00 • back Sun before 23:00 "
-            "• 2 adults + 1 child • $200–$500\n\n"
+            "No deals found in this run's batch.\n"
+            "Alfred searches a rotating set of 60+ airports per run and covers "
+            "300+ destinations every 2-3 days — check back soon!\n\n"
+            "<i>Criteria: ATL → anywhere · Fri after 17:00 · "
+            "Sun return · 2 adults + 1 child · $200–$500 total</i>\n\n"
             "— Alfred 🎩"
         )
 
     # Group by weekend
     by_weekend: dict[str, list[FlightDeal]] = {}
-    for deal in deals:
-        by_weekend.setdefault(deal.weekend_label, []).append(deal)
+    for d in deals:
+        by_weekend.setdefault(d.weekend_label, []).append(d)
 
     lines = [
         "✈️ <b>Alfred's Flight Report</b>",
-        f"<i>{now} · {len(deals)} deal(s) found · next 8 weekends</i>",
+        f"<i>{now} · {len(deals)} deal(s) across {len(by_weekend)} weekend(s)</i>",
         "",
     ]
 
-    for weekend_label, weekend_deals in by_weekend.items():
-        lines.append(f"📅 <b>{weekend_label}</b>")
-        # Show top 3 cheapest per weekend
-        for d in sorted(weekend_deals, key=lambda x: x.price)[:3]:
-            airline = _airline_label(d.airline)
+    for label, wdeals in by_weekend.items():
+        lines.append(f"📅 <b>{label}</b>")
+        for d in sorted(wdeals, key=lambda x: x.price_usd)[:4]:
+            flag = FLAG.get(d.destination_country, "🌍")
+            stops = STOPS_LABEL.get(d.outbound_stops, f"{d.outbound_stops} stops")
+            ret_time = (
+                f"Dep {d.return_departs}" if d.return_departs not in ("??", "")
+                else "check return time"
+            )
             lines += [
-                f"  🏙 <b>{d.destination_name}</b>  •  <b>${d.price:.0f}</b>  ({airline})",
-                f"  ┣ Out: {d.outbound_summary}",
-                f"  ┗ Back: {d.return_summary}",
+                f"  {flag} <b>{d.destination_city}</b> ({d.destination_iata})  •  "
+                f"<b>${d.price_usd}</b>  •  {d.airline}",
+                f"  ┣ Out: ATL {d.outbound_departs} → {d.destination_iata} {d.outbound_arrives}"
+                f"  ({d.outbound_duration}, {stops})",
+                f"  ┗ Return Sun: {ret_time} ⚠️ verify arrives ATL before 23:00",
                 "",
             ]
 
     lines += [
-        "<i>Prices shown are total for 2 adults + 1 child. "
-        "Search on Google Flights or your preferred booking site to confirm.</i>",
+        "<i>Total price for 2 adults + 1 child (economy).</i>",
+        "<i>Return arrival time: Alfred shows the best available — "
+        "please confirm it reaches ATL by 23:00 before booking.</i>",
         "",
         "— Alfred 🎩",
     ]
@@ -85,15 +93,12 @@ def _format_message(deals: list[FlightDeal]) -> str:
 
 def notify(deals: list[FlightDeal]) -> None:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    recipient_ids = [
+    recipients = [
         os.environ.get("TELEGRAM_CHAT_ID_YULIIA", ""),
         os.environ.get("TELEGRAM_CHAT_ID_IVAN", ""),
     ]
-
-    message = _format_message(deals)
-
-    for chat_id in recipient_ids:
-        if not chat_id:
-            continue
-        ok = _send(token, chat_id, message)
-        logger.info("Telegram → %s: %s", chat_id, "sent" if ok else "FAILED")
+    message = _format(deals)
+    for chat_id in recipients:
+        if chat_id:
+            ok = _send(token, chat_id, message)
+            logger.info("Telegram → %s: %s", chat_id, "sent ✓" if ok else "FAILED ✗")
