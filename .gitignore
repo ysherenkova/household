@@ -1,0 +1,19 @@
+# Environment — never commit real credentials
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

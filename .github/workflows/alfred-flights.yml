@@ -1,0 +1,39 @@
+name: Alfred — Flight Finder
+
+on:
+  schedule:
+    # Twice daily (Atlanta is UTC-4 in summer / UTC-5 in winter)
+    # 09:00 ET  →  13:00 UTC
+    - cron: "0 13 * * *"
+    # 21:00 ET  →  01:00 UTC (next day)
+    - cron: "0 1 * * *"
+  workflow_dispatch:  # allow manual run from GitHub Actions tab
+
+jobs:
+  find-flights:
+    name: Search & notify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Alfred Flight Finder
+        working-directory: agents/flight_finder
+        env:
+          AMADEUS_CLIENT_ID: ${{ secrets.AMADEUS_CLIENT_ID }}
+          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
+          AMADEUS_HOSTNAME: production
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID_YULIIA: ${{ secrets.TELEGRAM_CHAT_ID_YULIIA }}
+          TELEGRAM_CHAT_ID_IVAN: ${{ secrets.TELEGRAM_CHAT_ID_IVAN }}
+        run: python main.py
