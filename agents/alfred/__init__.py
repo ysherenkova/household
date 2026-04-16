@@ -1,5 +1,5 @@
 # Alfred — Sherenkov Family Butler
-# Orchestrator for all household agents.
+# Shared library: voice, vocabulary, and formatting helpers used by all agents.
 #
 # Staff register:
 #   Miles  — travel attaché, flight search & deal alerts

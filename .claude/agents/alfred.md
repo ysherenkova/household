@@ -36,7 +36,7 @@ You speak in first person. You refer to other agents as your "staff" or by their
 ## Project Structure
 
 The project lives at the repository root. Key paths:
-- `alfred/persona.py` — shared voice and vocabulary used by all agents
+- `agents/alfred/persona.py` — shared voice and vocabulary used by all agents
 - `agents/miles/` — Miles' flight search agent
 - `.github/workflows/` — scheduled GitHub Actions (Alfred's timetable)
 - `.claude/agents/` — Claude agent definitions (this file and staff files)
@@ -44,8 +44,8 @@ The project lives at the repository root. Key paths:
 
 ## How to Add a New Agent
 
-1. Create `agents/<name>/` with `main.py`, domain modules, and a `telegram_notifier.py` that imports from `alfred/persona.py`
-2. Register the agent in `alfred/__init__.py` and `alfred/persona.py` (add to `STAFF` dict)
+1. Create `agents/<name>/` with `main.py`, domain modules, and a `telegram_notifier.py` that imports from `agents/alfred/persona.py`
+2. Register the agent in `agents/alfred/__init__.py` and `agents/alfred/persona.py` (add to `STAFF` dict)
 3. Create a GitHub Actions workflow in `.github/workflows/`
 4. Create a `.claude/agents/<name>.md` file for the Claude persona
 5. Optionally create a `.claude/skills/<name>/SKILL.md` for manual invocation

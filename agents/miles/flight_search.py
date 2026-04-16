@@ -12,14 +12,9 @@ Filters applied per result:
 """
 
 import logging
-import os
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
-
-# Allow importing from alfred/ (repo root is two levels up from agents/miles/)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from airports import load_destination_airports, select_batch
 from google_flights import RoundTripResult, search
@@ -28,14 +23,15 @@ from windows import TripWindow, get_trip_windows
 logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-ORIGIN       = "ATL"
-ADULTS       = 2
-CHILDREN     = 1        # born 08/19/2022 → child fare (age 2–11)
-BUDGET_MIN   = 200
-BUDGET_MAX   = 500
-NUM_WEEKENDS = 8
-BATCH_SIZE   = 60
-MAX_WORKERS  = 5
+ORIGIN          = "ATL"
+ADULTS          = 2
+CHILDREN        = 1        # born 08/19/2022 → child fare (age 2–11)
+BUDGET_MIN      = 200
+BUDGET_MAX      = 500
+DEFAULT_WEEKS   = 2        # standard daily run — nearest 2 weekends
+EXTENDED_WEEKS  = 8        # extended run — next 8 weekends (~2 months)
+BATCH_SIZE      = 60
+MAX_WORKERS     = 5
 
 
 @dataclass
@@ -118,7 +114,7 @@ def _search_one(airport: dict, window: TripWindow) -> list[FlightDeal]:
     return deals
 
 
-def find_deals() -> list[FlightDeal]:
+def find_deals(num_weeks: int = DEFAULT_WEEKS) -> list[FlightDeal]:
     """
     Main entry point.
     Loads this run's rotating airport batch, generates all trip windows,
@@ -126,7 +122,7 @@ def find_deals() -> list[FlightDeal]:
     """
     all_airports = load_destination_airports()
     batch        = select_batch(all_airports, BATCH_SIZE)
-    windows      = get_trip_windows(NUM_WEEKENDS)
+    windows      = get_trip_windows(num_weeks)
 
     total_tasks = len(batch) * len(windows)
     logger.info(

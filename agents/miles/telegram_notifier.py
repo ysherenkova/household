@@ -6,11 +6,12 @@ Alfred frames Miles' report before delivering it to the household.
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from urllib.parse import quote_plus
 
 import requests
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from alfred.persona import greeting, staff_intro, no_results_note, SIGN_OFF, SEPARATOR
 from flight_search import FlightDeal
 
@@ -25,7 +26,41 @@ FLAG = {
     "CR": "🇨🇷", "PA": "🇵🇦", "GT": "🇬🇹", "HN": "🇭🇳", "TT": "🇹🇹",
 }
 STOPS_LABEL = {0: "nonstop", 1: "1 stop", 2: "2 stops"}
-WINDOW_ICON = {"standard": "📅", "long_thu": "📅✨", "long_mon": "📅✨"}
+
+
+def _booking_url(dest_iata: str, depart: date, ret: date) -> str:
+    """Construct a pre-filled Google Flights search URL for this route and dates."""
+    q = (
+        f"round trip flights ATL to {dest_iata} "
+        f"{depart.strftime('%b %d %Y')} returning {ret.strftime('%b %d %Y')} "
+        f"2 adults 1 child economy"
+    )
+    return f"https://www.google.com/travel/flights?q={quote_plus(q)}"
+
+
+def _deal_block(d: FlightDeal) -> str:
+    flag  = FLAG.get(d.destination_country, "🌍")
+    stops = STOPS_LABEL.get(d.outbound_stops, f"{d.outbound_stops} stops")
+
+    depart_fmt = d.depart_date.strftime("%b %d")
+    return_fmt = d.return_date.strftime("%b %d")
+    holiday_tag = f"  🎉 {d.holiday_label}" if d.holiday_label else ""
+
+    ret_dep = (
+        f"back {d.return_departs}"
+        if d.return_departs not in ("??", "")
+        else "back ⚠ verify time"
+    )
+
+    url = _booking_url(d.destination_iata, d.depart_date, d.return_date)
+
+    return "\n".join([
+        f"📅 <b>{depart_fmt} – {return_fmt}</b>{holiday_tag}",
+        f"{flag} <b>{d.destination_city}</b>  ({d.destination_iata})",
+        f"💰 ${d.price_usd}  ·  ✈️ {d.airline}  ·  {stops}  ·  out {d.outbound_departs}→{d.outbound_arrives}  ·  {ret_dep}",
+        f'🔗 <a href="{url}">Book on Google Flights</a>',
+        "",
+    ])
 
 
 def _send(token: str, chat_id: str, text: str) -> bool:
@@ -43,73 +78,41 @@ def _send(token: str, chat_id: str, text: str) -> bool:
 def _format(deals: list[FlightDeal]) -> str:
     now = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
 
-    # ── Header — Alfred's voice ───────────────────────────────────────────────
-    header_lines = [
+    lines = [
         f"🎩 <b>{greeting()}, Sherenkov household.</b>",
         SEPARATOR,
     ]
 
     if not deals:
-        header_lines += [
+        lines += [
             staff_intro("miles"),
             "",
             no_results_note("miles"),
             "",
-            f"<i>Criteria: ATL → anywhere · Thu/Fri depart · Sun/Mon return "
-            f"· 2 adults + 1 child · $200–$500</i>",
+            f"<i>ATL → anywhere · Thu/Fri–Sun/Mon · 2 adults + 1 child · $200–$500</i>",
             f"<i>{now}</i>",
             "",
             SIGN_OFF,
         ]
-        return "\n".join(header_lines)
+        return "\n".join(lines)
 
-    header_lines += [
+    lines += [
         staff_intro("miles"),
-        f"<i>{len(deals)} deal(s) found · {now}</i>",
+        f"<i>{len(deals)} deal(s) · {now}</i>",
         "",
     ]
 
-    # ── Group by window label ─────────────────────────────────────────────────
-    by_window: dict[str, list[FlightDeal]] = {}
     for d in deals:
-        by_window.setdefault(d.window_label, []).append(d)
+        lines.append(_deal_block(d))
 
-    body_lines = []
-    for label, wdeals in by_window.items():
-        # Pick representative deal to get window metadata
-        rep = wdeals[0]
-        icon = WINDOW_ICON.get(rep.window_type, "📅")
-        holiday_tag = f"  🎉 <b>{rep.holiday_label}</b>" if rep.holiday_label else ""
-        body_lines.append(f"{icon} <b>{label}</b>{holiday_tag}")
-
-        return_day = rep.return_date.strftime("%a")   # "Sun" or "Mon"
-
-        for d in sorted(wdeals, key=lambda x: x.price_usd)[:4]:
-            flag  = FLAG.get(d.destination_country, "🌍")
-            stops = STOPS_LABEL.get(d.outbound_stops, f"{d.outbound_stops} stops")
-            ret_note = (
-                f"dep {d.return_departs}" if d.return_departs not in ("??", "")
-                else "verify time"
-            )
-            body_lines += [
-                f"  {flag} <b>{d.destination_city}</b> ({d.destination_iata})"
-                f"  ·  <b>${d.price_usd}</b>  ·  {d.airline}",
-                f"  ┣ Out: ATL {d.outbound_departs} → {d.destination_iata} {d.outbound_arrives}"
-                f"  ({d.outbound_duration}, {stops})",
-                f"  ┗ Back {return_day}: {ret_note}"
-                f"  <i>⚠ confirm arrives ATL before 23:00</i>",
-                "",
-            ]
-
-    footer_lines = [
+    lines += [
         SEPARATOR,
-        "<i>Prices: economy, 2 adults + 1 child (total).</i>",
-        "<i>Miles rotates through 300+ destinations — new batches arrive twice daily.</i>",
+        "<i>Prices: economy · 2 adults + 1 child (total) · confirm return arrives ATL before 23:00</i>",
         "",
         SIGN_OFF,
     ]
 
-    return "\n".join(header_lines + body_lines + footer_lines)
+    return "\n".join(lines)
 
 
 def notify(deals: list[FlightDeal]) -> None:

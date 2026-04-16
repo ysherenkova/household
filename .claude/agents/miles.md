@@ -70,7 +70,7 @@ To test without sending Telegram messages, set those to dummy values and check t
 | `agents/miles/airports.py` | OurAirports data loader + batch rotation |
 | `agents/miles/google_flights.py` | fast-flights wrapper |
 | `agents/miles/telegram_notifier.py` | Message formatting + delivery |
-| `alfred/persona.py` | Alfred's voice — imported by the notifier |
+| `agents/alfred/persona.py` | Alfred's voice — imported by the notifier |
 
 ## When Reporting to the Household
 
