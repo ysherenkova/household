@@ -114,7 +114,7 @@ def get_trip_windows(num_weeks: int = 8) -> list[TripWindow]:
             ),
             depart_date=thu,
             return_date=sun,
-            depart_after_h=0,     # day off → any departure time
+            depart_after_h=18,    # after 18:00 — fly after work even on day off
             return_before_h=23,
             holiday_label=thu_holiday,
             window_type="long_thu",
