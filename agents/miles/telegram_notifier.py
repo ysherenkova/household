@@ -118,6 +118,16 @@ def _format(deals: list[FlightDeal]) -> str:
 MAX_MSG_LEN = 4000  # Telegram hard limit is 4096; leave headroom
 
 
+def _deduplicate(deals: list[FlightDeal]) -> list[FlightDeal]:
+    """Keep only the cheapest deal per (destination, depart_date, return_date)."""
+    best: dict[tuple, FlightDeal] = {}
+    for d in deals:
+        key = (d.destination_iata, d.depart_date, d.return_date)
+        if key not in best or d.price_usd < best[key].price_usd:
+            best[key] = d
+    return sorted(best.values(), key=lambda d: (d.depart_date, d.price_usd))
+
+
 def _split_messages(deals: list[FlightDeal], header: str, footer: str) -> list[str]:
     """
     Build a list of Telegram messages, each under MAX_MSG_LEN chars.
@@ -149,6 +159,7 @@ def notify(deals: list[FlightDeal]) -> None:
     if not deals:
         messages = [_format([])]
     else:
+        deals = _deduplicate(deals)
         now = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
         header = "\n".join([
             f"🎩 <b>{greeting()}, Sherenkov household.</b>",
