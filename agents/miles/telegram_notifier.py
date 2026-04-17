@@ -46,18 +46,18 @@ def _deal_block(d: FlightDeal) -> str:
     return_fmt = d.return_date.strftime("%b %d")
     holiday_tag = f"  🎉 {d.holiday_label}" if d.holiday_label else ""
 
-    ret_dep = (
-        f"back {d.return_departs}"
-        if d.return_departs not in ("??", "")
-        else "back ⚠ verify time"
-    )
-
     url = _booking_url(d.destination_iata, d.depart_date, d.return_date)
+
+    # Only show time detail when the library actually returned it
+    time_known = d.outbound_departs not in ("??", "")
+    time_part = f"  ·  out {d.outbound_departs}→{d.outbound_arrives}" if time_known else ""
+
+    airline_part = f"  ·  ✈️ {d.airline}" if d.airline not in ("?", "") else ""
 
     return "\n".join([
         f"📅 <b>{depart_fmt} – {return_fmt}</b>{holiday_tag}",
         f"{flag} <b>{d.destination_city}</b>  ({d.destination_iata})",
-        f"💰 ${d.price_usd}  ·  ✈️ {d.airline}  ·  {stops}  ·  out {d.outbound_departs}→{d.outbound_arrives}  ·  {ret_dep}",
+        f"💰 ${d.price_usd}{airline_part}  ·  {stops}{time_part}",
         f'🔗 <a href="{url}">Book on Google Flights</a>',
         "",
     ])

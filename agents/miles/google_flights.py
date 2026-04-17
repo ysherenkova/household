@@ -95,6 +95,7 @@ def search(
                 infants_on_lap=0,
             ),
             fetch_mode="common",
+            max_stops=0,
         )
     except Exception as exc:
         logger.debug("fast-flights %s→%s: %s", origin, destination, exc)
