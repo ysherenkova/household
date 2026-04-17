@@ -100,7 +100,7 @@ def get_trip_windows(num_weeks: int = 8) -> list[TripWindow]:
             label=f"{_fmt(fri)}–{_fmt(sun)}" + (f"  ·  {fri_holiday}" if fri_holiday else ""),
             depart_date=fri,
             return_date=sun,
-            depart_after_h=0 if fri_holiday else 17,   # holiday Fri = fly any time
+            depart_after_h=0 if fri_holiday else 18,   # holiday Fri = fly any time; otherwise after 18:00
             return_before_h=23,
             holiday_label=h_label,
             window_type="standard",
@@ -128,7 +128,7 @@ def get_trip_windows(num_weeks: int = 8) -> list[TripWindow]:
             ),
             depart_date=fri,
             return_date=mon,
-            depart_after_h=0 if fri_holiday else 17,
+            depart_after_h=0 if fri_holiday else 18,   # after 18:00 on Fri
             return_before_h=23,
             holiday_label=mon_holiday,
             window_type="long_mon",

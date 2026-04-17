@@ -62,10 +62,15 @@ def _time_to_minutes(hhmm: str) -> int:
 
 
 def _passes_filter(result: RoundTripResult, window: TripWindow) -> bool:
-    # Nonstop is enforced at the Google Flights query level (max_stops=0).
-    # Departure time filtering is skipped — fast-flights doesn't reliably return
-    # time data; the booking link lets the user verify timing on Google Flights.
-    return BUDGET_MIN <= result.price_usd <= BUDGET_MAX
+    # Nonstop enforced at query level (max_stops=0).
+    if not (BUDGET_MIN <= result.price_usd <= BUDGET_MAX):
+        return False
+    # Enforce departure time constraint when the time is known.
+    if window.depart_after_h > 0:
+        dep_mins = _time_to_minutes(result.outbound_departs)
+        if dep_mins >= 0 and dep_mins < window.depart_after_h * 60:
+            return False
+    return True
 
 
 def _search_one(airport: dict, window: TripWindow) -> list[FlightDeal]:
