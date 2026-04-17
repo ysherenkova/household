@@ -2,11 +2,13 @@ name: Household — dispatches Miles (flight survey)
 
 on:
   schedule:
-    # Twice daily — Atlanta is UTC-4 (EDT) / UTC-5 (EST)
-    # 09:00 ET → 13:00 UTC
-    - cron: "0 13 * * *"
-    # 21:00 ET → 01:00 UTC
-    - cron: "0 1 * * *"
+    # Three times daily — Atlanta is UTC-4 (EDT) / UTC-5 (EST)
+    # 08:00 ET → 12:00 UTC
+    - cron: "0 12 * * *"
+    # 12:00 ET → 16:00 UTC
+    - cron: "0 16 * * *"
+    # 19:00 ET → 23:00 UTC
+    - cron: "0 23 * * *"
   workflow_dispatch:   # manual trigger from GitHub Actions tab
 
 jobs:

@@ -27,7 +27,7 @@ ORIGIN          = "ATL"
 ADULTS          = 2
 CHILDREN        = 1        # born 08/19/2022 → child fare (age 2–11)
 BUDGET_MIN      = 200
-BUDGET_MAX      = 500
+BUDGET_MAX      = 600
 DEFAULT_WEEKS   = 2        # standard daily run — nearest 2 weekends
 EXTENDED_WEEKS  = 8        # extended run — next 8 weekends (~2 months)
 BATCH_SIZE      = 60
@@ -67,9 +67,9 @@ def _passes_filter(result: RoundTripResult, window: TripWindow) -> bool:
     if not (BUDGET_MIN <= result.price_usd <= BUDGET_MAX):
         return False
     dep_mins = _time_to_minutes(result.outbound_departs)
-    if dep_mins < 0:
-        return False
-    if dep_mins < window.depart_after_h * 60:
+    # If departure time is known, enforce the window constraint.
+    # If unknown (dep_mins < 0), include the deal — user can verify timing via the booking link.
+    if dep_mins >= 0 and dep_mins < window.depart_after_h * 60:
         return False
     return True
 

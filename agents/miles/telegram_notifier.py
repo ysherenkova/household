@@ -25,7 +25,7 @@ FLAG = {
     "KY": "🇰🇾", "LC": "🇱🇨", "SX": "🇸🇽", "AW": "🇦🇼", "BZ": "🇧🇿",
     "CR": "🇨🇷", "PA": "🇵🇦", "GT": "🇬🇹", "HN": "🇭🇳", "TT": "🇹🇹",
 }
-STOPS_LABEL = {0: "nonstop", 1: "1 stop", 2: "2 stops"}
+STOPS_LABEL = {0: "nonstop", 1: "1 stop", 2: "2 stops", -1: "stops unknown"}
 
 
 def _booking_url(dest_iata: str, depart: date, ret: date) -> str:

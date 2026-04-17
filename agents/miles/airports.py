@@ -95,14 +95,22 @@ def load_destination_airports() -> list[dict]:
 def select_batch(airports: list[dict], batch_size: int = 60) -> list[dict]:
     """
     Pick a rotating batch of airports so we don't search all 300+ at once.
-    The batch rotates every run (twice per day) covering the full list in
-    ~len(airports) / batch_size runs  ≈  2-3 days.
-    No state file needed — offset is derived from the current UTC date + half-day.
+    The batch rotates every run (three times per day) covering the full list in
+    ~len(airports) / batch_size runs  ≈  ~4-5 days.
+    No state file needed — offset is derived from the current UTC date + run slot.
+    Run slots align with the scheduled ET times: 8am (UTC 12), noon (UTC 16), 7pm (UTC 23).
     """
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
-    # Two runs per day → increment every 12 hours
-    run_index = now.timetuple().tm_yday * 2 + (1 if now.hour >= 12 else 0)
+    # Three runs per day — map UTC hour to slot 0/1/2
+    hour = now.hour
+    if hour < 14:
+        slot = 0   # 08:00 ET run (12:00 UTC)
+    elif hour < 20:
+        slot = 1   # 12:00 ET run (16:00 UTC)
+    else:
+        slot = 2   # 19:00 ET run (23:00 UTC)
+    run_index = now.timetuple().tm_yday * 3 + slot
     total = len(airports)
     if total == 0:
         return []
