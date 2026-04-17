@@ -35,12 +35,16 @@ class RoundTripResult:
 
 
 def _to_24h(time_str: str) -> str:
-    """Convert '6:30 PM' or '18:30' → '18:30'. Returns '??' on failure."""
+    """Convert '6:30 PM', '6:30 PM on Fri, May 8', or '18:30' → '18:30'. Returns '??' on failure."""
     if not time_str:
         return "??"
+    import re, datetime
     s = str(time_str).strip()
+    # Extract bare time from strings like "5:05 AM on Fri, May 8"
+    m = re.match(r"(\d{1,2}:\d{2}\s*(?:AM|PM))", s, re.IGNORECASE)
+    if m:
+        s = m.group(1).strip()
     if "AM" in s.upper() or "PM" in s.upper():
-        import datetime
         for fmt in ("%I:%M %p", "%I:%M%p"):
             try:
                 return datetime.datetime.strptime(s.upper(), fmt.upper()).strftime("%H:%M")
