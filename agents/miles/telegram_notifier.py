@@ -115,14 +115,62 @@ def _format(deals: list[FlightDeal]) -> str:
     return "\n".join(lines)
 
 
+MAX_MSG_LEN = 4000  # Telegram hard limit is 4096; leave headroom
+
+
+def _split_messages(deals: list[FlightDeal], header: str, footer: str) -> list[str]:
+    """
+    Build a list of Telegram messages, each under MAX_MSG_LEN chars.
+    Header goes on the first message, footer on the last.
+    """
+    blocks = [_deal_block(d) for d in deals]
+    messages = []
+    current = header
+
+    for block in blocks:
+        if len(current) + len(block) > MAX_MSG_LEN:
+            messages.append(current)
+            current = block
+        else:
+            current += block
+
+    current += footer
+    messages.append(current)
+    return messages
+
+
 def notify(deals: list[FlightDeal]) -> None:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     recipients = [
         os.environ.get("TELEGRAM_CHAT_ID_YULIIA", ""),
         os.environ.get("TELEGRAM_CHAT_ID_IVAN", ""),
     ]
-    message = _format(deals)
+
+    if not deals:
+        messages = [_format([])]
+    else:
+        now = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
+        header = "\n".join([
+            f"🎩 <b>{greeting()}, Sherenkov household.</b>",
+            SEPARATOR,
+            staff_intro("miles"),
+            f"<i>{len(deals)} deal(s) · {now}</i>",
+            "",
+        ])
+        footer = "\n".join([
+            SEPARATOR,
+            "<i>Prices: economy · 2 adults + 1 child (total) · confirm return arrives ATL before 23:00</i>",
+            "",
+            SIGN_OFF,
+        ])
+        messages = _split_messages(deals, header, footer)
+
     for chat_id in recipients:
-        if chat_id:
-            ok = _send(token, chat_id, message)
-            logger.info("Telegram → %s: %s", chat_id, "sent ✓" if ok else "FAILED ✗")
+        if not chat_id:
+            continue
+        for i, msg in enumerate(messages):
+            ok = _send(token, chat_id, msg)
+            logger.info(
+                "Telegram → %s msg %d/%d: %s",
+                chat_id, i + 1, len(messages), "sent ✓" if ok else "FAILED ✗",
+            )

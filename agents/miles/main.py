@@ -7,6 +7,7 @@ Usage:
     python main.py                  # standard run — nearest 2 weekends
     python main.py --extended       # extended run — next 8 weekends
     python main.py --weeks 4        # custom horizon
+    python main.py --test           # quick smoke-test: 5 airports × 1 weekend
 """
 
 import argparse
@@ -15,6 +16,8 @@ import sys
 
 from flight_search import DEFAULT_WEEKS, EXTENDED_WEEKS, find_deals
 from telegram_notifier import notify
+
+TEST_AIRPORTS = ["MCO", "MIA", "CUN", "NAS", "SJU"]  # ~15 searches, done in seconds
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +41,30 @@ def main() -> None:
         metavar="N",
         help="Custom number of weekends to search ahead",
     )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help=f"Smoke-test: {len(TEST_AIRPORTS)} airports × 1 weekend, delivers to Telegram",
+    )
     args = parser.parse_args()
+
+    if args.test:
+        scope = f"TEST ({len(TEST_AIRPORTS)} airports × 1 weekend)"
+        logger.info("Miles reporting for duty. Search scope: %s.", scope)
+        from flight_search import _search_one
+        from windows import get_trip_windows
+        windows = get_trip_windows(num_weeks=1)
+        from airports import _fallback_airports
+        all_ap = {a["iata_code"]: a for a in _fallback_airports()}
+        deals = []
+        for iata in TEST_AIRPORTS:
+            if iata in all_ap:
+                for w in windows:
+                    deals.extend(_search_one(all_ap[iata], w))
+        deals.sort(key=lambda d: (d.depart_date, d.price_usd))
+        notify(deals)
+        logger.info("Test complete. %d deal(s) sent to Telegram.", len(deals))
+        return
 
     if args.extended:
         num_weeks = EXTENDED_WEEKS
