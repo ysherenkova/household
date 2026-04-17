@@ -1,11 +1,16 @@
 """
 Miles — Telegram Notifier
 Alfred frames Miles' report before delivering it to the household.
+
+Message structure:
+  1. Summary: header + one line per city with cheapest price
+  2. One message per city: all flight options for that city
 """
 
 import logging
 import os
 import sys
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from urllib.parse import quote_plus
 
@@ -26,10 +31,10 @@ FLAG = {
     "CR": "🇨🇷", "PA": "🇵🇦", "GT": "🇬🇹", "HN": "🇭🇳", "TT": "🇹🇹",
 }
 STOPS_LABEL = {0: "nonstop", 1: "1 stop", 2: "2 stops", -1: "stops unknown"}
+MAX_MSG_LEN = 4000  # Telegram hard limit is 4096; leave headroom
 
 
 def _booking_url(dest_iata: str, depart: date, ret: date) -> str:
-    """Construct a pre-filled Google Flights search URL for this route and dates."""
     q = (
         f"round trip flights ATL to {dest_iata} "
         f"{depart.strftime('%b %d %Y')} returning {ret.strftime('%b %d %Y')} "
@@ -38,28 +43,63 @@ def _booking_url(dest_iata: str, depart: date, ret: date) -> str:
     return f"https://www.google.com/travel/flights?q={quote_plus(q)}"
 
 
-def _deal_block(d: FlightDeal) -> str:
-    flag  = FLAG.get(d.destination_country, "🌍")
-    stops = STOPS_LABEL.get(d.outbound_stops, f"{d.outbound_stops} stops")
-
+def _flight_line(d: FlightDeal) -> str:
+    """Single compact line for one flight option within a city block."""
     depart_fmt = d.depart_date.strftime("%a, %b %d")
     return_fmt = d.return_date.strftime("%a, %b %d")
     holiday_tag = f"  🎉 {d.holiday_label}" if d.holiday_label else ""
 
-    url = _booking_url(d.destination_iata, d.depart_date, d.return_date)
-
-    airline_part = f" {d.airline}" if d.airline not in ("?", "") else ""
     time_known = d.outbound_departs not in ("??", "")
     depart_time = f", {d.outbound_departs}" if time_known else ""
     arrive_time = f", {d.outbound_arrives}" if time_known else ""
 
+    url = _booking_url(d.destination_iata, d.depart_date, d.return_date)
+    airline_part = f" {d.airline}" if d.airline not in ("?", "") else ""
+
     return "\n".join([
-        f"📅 <b>{depart_fmt}{depart_time} – {return_fmt}{arrive_time}</b>{holiday_tag}",
-        f"{flag} <b>{d.destination_city}</b>  ({d.destination_iata})",
-        f"💰 ${d.price_usd}  ·  ✈️{airline_part}  ·  {stops}",
-        f'🔗 <a href="{url}">Book on Google Flights</a>',
+        f"📅 {depart_fmt}{depart_time} – {return_fmt}{arrive_time}{holiday_tag}",
+        f"💰 ${d.price_usd}  ·  ✈️{airline_part}  ·  <a href=\"{url}\">Book</a>",
         "",
     ])
+
+
+def _city_block(iata: str, deals: list[FlightDeal]) -> str:
+    """Header + all flights for one city."""
+    d0 = deals[0]
+    flag = FLAG.get(d0.destination_country, "🌍")
+    lines = [f"{flag} <b>{d0.destination_city}  ({iata})</b>", ""]
+    for d in deals:
+        lines.append(_flight_line(d))
+    return "\n".join(lines)
+
+
+def _summary_line(iata: str, deals: list[FlightDeal]) -> str:
+    """One line per city for the summary message."""
+    d0 = deals[0]
+    flag = FLAG.get(d0.destination_country, "🌍")
+    cheapest = min(d.price_usd for d in deals)
+    return f"{flag} <b>{d0.destination_city}</b> ({iata}) — from ${cheapest}"
+
+
+def _deduplicate(deals: list[FlightDeal]) -> list[FlightDeal]:
+    """Keep only the cheapest deal per (destination, depart_date, return_date, dep_time, airline)."""
+    best: dict[tuple, FlightDeal] = {}
+    for d in deals:
+        key = (d.destination_iata, d.depart_date, d.return_date, d.outbound_departs, d.airline)
+        if key not in best or d.price_usd < best[key].price_usd:
+            best[key] = d
+    return sorted(best.values(), key=lambda d: (d.destination_iata, d.depart_date, d.outbound_departs))
+
+
+def _group_by_city(deals: list[FlightDeal]) -> dict[str, list[FlightDeal]]:
+    """Group deals by IATA code, each city sorted by depart_date then price."""
+    groups: dict[str, list[FlightDeal]] = defaultdict(list)
+    for d in deals:
+        groups[d.destination_iata].append(d)
+    # Sort cities by cheapest price, then sort each city's flights
+    return dict(
+        sorted(groups.items(), key=lambda kv: min(d.price_usd for d in kv[1]))
+    )
 
 
 def _send(token: str, chat_id: str, text: str) -> bool:
@@ -74,77 +114,62 @@ def _send(token: str, chat_id: str, text: str) -> bool:
     return resp.ok
 
 
-def _format(deals: list[FlightDeal]) -> str:
+def _build_messages(deals: list[FlightDeal]) -> list[str]:
+    """
+    Returns a list of Telegram messages:
+      [0]   Summary: header + city list with cheapest prices
+      [1..] One message per city (split further if over MAX_MSG_LEN)
+    """
     now = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
+    groups = _group_by_city(deals)
 
-    lines = [
+    # ── Message 1: summary ──────────────────────────────────────────────────
+    summary_lines = [
         f"🎩 <b>{greeting()}, Sherenkov household.</b>",
         SEPARATOR,
-    ]
-
-    if not deals:
-        lines += [
-            staff_intro("miles"),
-            "",
-            no_results_note("miles"),
-            "",
-            f"<i>ATL → anywhere · Thu/Fri–Sun/Mon · 2 adults + 1 child · $200–$500</i>",
-            f"<i>{now}</i>",
-            "",
-            SIGN_OFF,
-        ]
-        return "\n".join(lines)
-
-    lines += [
         staff_intro("miles"),
         f"<i>{len(deals)} deal(s) · {now}</i>",
         "",
     ]
+    for iata, city_deals in groups.items():
+        summary_lines.append(_summary_line(iata, city_deals))
+    summary_lines += [
+        "",
+        "<i>Details by city follow ↓</i>",
+    ]
+    messages = ["\n".join(summary_lines)]
 
-    for d in deals:
-        lines.append(_deal_block(d))
+    # ── Messages 2+: one per city (split if needed) ─────────────────────────
+    for iata, city_deals in groups.items():
+        block = _city_block(iata, city_deals)
+        # Split oversized city blocks
+        if len(block) <= MAX_MSG_LEN:
+            messages.append(block)
+        else:
+            current = ""
+            d0 = city_deals[0]
+            flag = FLAG.get(d0.destination_country, "🌍")
+            header = f"{flag} <b>{d0.destination_city}  ({iata})</b>\n\n"
+            current = header
+            for d in city_deals:
+                line = _flight_line(d)
+                if len(current) + len(line) > MAX_MSG_LEN:
+                    messages.append(current)
+                    current = header + line
+                else:
+                    current += line
+            if current.strip():
+                messages.append(current)
 
-    lines += [
+    # ── Footer on last message ───────────────────────────────────────────────
+    footer = "\n".join([
         SEPARATOR,
-        "<i>Prices: economy · 2 adults + 1 child (total) · confirm return arrives ATL before 23:00</i>",
+        "<i>Economy · 2 adults + 1 child · nonstop · confirm return before 23:00</i>",
         "",
         SIGN_OFF,
-    ]
+    ])
+    messages[-1] += "\n" + footer
 
-    return "\n".join(lines)
-
-
-MAX_MSG_LEN = 4000  # Telegram hard limit is 4096; leave headroom
-
-
-def _deduplicate(deals: list[FlightDeal]) -> list[FlightDeal]:
-    """Keep only the cheapest deal per (destination, depart_date, return_date, departure_time)."""
-    best: dict[tuple, FlightDeal] = {}
-    for d in deals:
-        key = (d.destination_iata, d.depart_date, d.return_date, d.outbound_departs, d.airline)
-        if key not in best or d.price_usd < best[key].price_usd:
-            best[key] = d
-    return sorted(best.values(), key=lambda d: (d.depart_date, d.destination_iata, d.outbound_departs))
-
-
-def _split_messages(deals: list[FlightDeal], header: str, footer: str) -> list[str]:
-    """
-    Build a list of Telegram messages, each under MAX_MSG_LEN chars.
-    Header goes on the first message, footer on the last.
-    """
-    blocks = [_deal_block(d) for d in deals]
-    messages = []
-    current = header
-
-    for block in blocks:
-        if len(current) + len(block) > MAX_MSG_LEN:
-            messages.append(current)
-            current = block
-        else:
-            current += block
-
-    current += footer
-    messages.append(current)
     return messages
 
 
@@ -156,24 +181,22 @@ def notify(deals: list[FlightDeal]) -> None:
     ]
 
     if not deals:
-        messages = [_format([])]
-    else:
-        deals = _deduplicate(deals)
         now = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
-        header = "\n".join([
+        messages = ["\n".join([
             f"🎩 <b>{greeting()}, Sherenkov household.</b>",
             SEPARATOR,
             staff_intro("miles"),
-            f"<i>{len(deals)} deal(s) · {now}</i>",
             "",
-        ])
-        footer = "\n".join([
-            SEPARATOR,
-            "<i>Prices: economy · 2 adults + 1 child (total) · confirm return arrives ATL before 23:00</i>",
+            no_results_note("miles"),
+            "",
+            f"<i>ATL → anywhere · after 18:00 · nonstop · $200–$600</i>",
+            f"<i>{now}</i>",
             "",
             SIGN_OFF,
-        ])
-        messages = _split_messages(deals, header, footer)
+        ])]
+    else:
+        deals = _deduplicate(deals)
+        messages = _build_messages(deals)
 
     for chat_id in recipients:
         if not chat_id:
