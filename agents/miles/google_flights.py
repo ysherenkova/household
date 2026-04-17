@@ -116,6 +116,6 @@ def search(
             outbound_departs=_to_24h(f.departure),
             outbound_arrives=_to_24h(f.arrival),
             outbound_duration=f.duration or "",
-            outbound_stops=f.stops if (f.stops is not None and f.stops != "Unknown") else -1,
+            outbound_stops=0,  # max_stops=0 is passed to Google, so all results are nonstop
         ))
     return out
