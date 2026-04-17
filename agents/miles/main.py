@@ -81,7 +81,7 @@ def main() -> None:
         scope = f"single weekend ({args.date})"
         logger.info("Miles reporting for duty. Search scope: %s.", scope)
         try:
-            deals = find_deals(num_weeks=1, start_friday=start_friday)
+            deals = find_deals(num_weeks=1, start_friday=start_friday, all_airports=True)
             notify(deals)
             logger.info("Survey complete. Alfred has been informed.")
         except Exception as exc:

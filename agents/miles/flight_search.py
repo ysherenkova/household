@@ -111,20 +111,22 @@ def _search_one(airport: dict, window: TripWindow) -> list[FlightDeal]:
     return deals
 
 
-def find_deals(num_weeks: int = DEFAULT_WEEKS, start_friday=None) -> list[FlightDeal]:
+def find_deals(num_weeks: int = DEFAULT_WEEKS, start_friday=None, all_airports: bool = False) -> list[FlightDeal]:
     """
     Main entry point.
     Loads this run's rotating airport batch, generates all trip windows,
     then searches every (airport × window) pair concurrently.
+    Pass all_airports=True to search the full curated list instead of the rotating batch.
     """
-    all_airports = load_destination_airports()
-    batch        = select_batch(all_airports, BATCH_SIZE)
+    airports     = load_destination_airports()
+    batch        = airports if all_airports else select_batch(airports, BATCH_SIZE)
     windows      = get_trip_windows(num_weeks, start_friday=start_friday)
 
     total_tasks = len(batch) * len(windows)
     logger.info(
-        "Miles: %d airports × %d windows = %d searches this run",
+        "Miles: %d airports × %d windows = %d searches this run%s",
         len(batch), len(windows), total_tasks,
+        " (full list)" if all_airports else "",
     )
 
     tasks = [(airport, window) for window in windows for airport in batch]
