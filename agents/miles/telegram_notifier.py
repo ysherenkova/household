@@ -42,8 +42,8 @@ def _deal_block(d: FlightDeal) -> str:
     flag  = FLAG.get(d.destination_country, "🌍")
     stops = STOPS_LABEL.get(d.outbound_stops, f"{d.outbound_stops} stops")
 
-    depart_fmt = d.depart_date.strftime("%b %d")
-    return_fmt = d.return_date.strftime("%b %d")
+    depart_fmt = d.depart_date.strftime("%a, %b %d")
+    return_fmt = d.return_date.strftime("%a, %b %d")
     holiday_tag = f"  🎉 {d.holiday_label}" if d.holiday_label else ""
 
     url = _booking_url(d.destination_iata, d.depart_date, d.return_date)
