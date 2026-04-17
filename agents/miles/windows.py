@@ -73,14 +73,18 @@ def _fmt(d: date) -> str:
     return d.strftime("%b %d")
 
 
-def get_trip_windows(num_weeks: int = 8) -> list[TripWindow]:
+def get_trip_windows(num_weeks: int = 8, start_friday: date | None = None) -> list[TripWindow]:
     """
     Return all trip windows for the next num_weeks weekends, sorted by
     departure date then window type.
+    start_friday: override the first Friday (must be a Friday); defaults to next upcoming Friday.
     """
-    today = date.today()
-    days_to_friday = (4 - today.weekday()) % 7 or 7
-    first_friday = today + timedelta(days=days_to_friday)
+    if start_friday is not None:
+        first_friday = start_friday
+    else:
+        today = date.today()
+        days_to_friday = (4 - today.weekday()) % 7 or 7
+        first_friday = today + timedelta(days=days_to_friday)
 
     windows: list[TripWindow] = []
 

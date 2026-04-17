@@ -13,6 +13,7 @@ Usage:
 import argparse
 import logging
 import sys
+from datetime import date
 
 from flight_search import DEFAULT_WEEKS, EXTENDED_WEEKS, find_deals
 from telegram_notifier import notify
@@ -46,6 +47,11 @@ def main() -> None:
         action="store_true",
         help=f"Smoke-test: {len(TEST_AIRPORTS)} airports × 1 weekend, delivers to Telegram",
     )
+    parser.add_argument(
+        "--date",
+        metavar="YYYY-MM-DD",
+        help="Search a specific Friday's weekend only (e.g. --date 2026-04-24)",
+    )
     args = parser.parse_args()
 
     if args.test:
@@ -64,6 +70,23 @@ def main() -> None:
         deals.sort(key=lambda d: (d.depart_date, d.price_usd))
         notify(deals)
         logger.info("Test complete. %d deal(s) sent to Telegram.", len(deals))
+        return
+
+    if args.date:
+        try:
+            start_friday = date.fromisoformat(args.date)
+        except ValueError:
+            logger.error("--date must be YYYY-MM-DD, got: %s", args.date)
+            sys.exit(1)
+        scope = f"single weekend ({args.date})"
+        logger.info("Miles reporting for duty. Search scope: %s.", scope)
+        try:
+            deals = find_deals(num_weeks=1, start_friday=start_friday)
+            notify(deals)
+            logger.info("Survey complete. Alfred has been informed.")
+        except Exception as exc:
+            logger.exception("Miles encountered an error: %s", exc)
+            sys.exit(1)
         return
 
     if args.extended:
