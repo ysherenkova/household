@@ -48,16 +48,14 @@ def _deal_block(d: FlightDeal) -> str:
 
     url = _booking_url(d.destination_iata, d.depart_date, d.return_date)
 
-    # Only show time detail when the library actually returned it
+    airline_part = f" {d.airline}" if d.airline not in ("?", "") else ""
     time_known = d.outbound_departs not in ("??", "")
-    time_part = f"  ·  out {d.outbound_departs}→{d.outbound_arrives}" if time_known else ""
-
-    airline_part = f"  ·  ✈️ {d.airline}" if d.airline not in ("?", "") else ""
+    time_part = f"  ·  {d.outbound_departs}→{d.outbound_arrives}" if time_known else ""
 
     return "\n".join([
         f"📅 <b>{depart_fmt} – {return_fmt}</b>{holiday_tag}",
         f"{flag} <b>{d.destination_city}</b>  ({d.destination_iata})",
-        f"💰 ${d.price_usd}{airline_part}  ·  {stops}{time_part}",
+        f"💰 ${d.price_usd}  ·  ✈️{airline_part}  ·  {stops}{time_part}",
         f'🔗 <a href="{url}">Book on Google Flights</a>',
         "",
     ])
@@ -119,13 +117,13 @@ MAX_MSG_LEN = 4000  # Telegram hard limit is 4096; leave headroom
 
 
 def _deduplicate(deals: list[FlightDeal]) -> list[FlightDeal]:
-    """Keep only the cheapest deal per (destination, depart_date, return_date)."""
+    """Keep only the cheapest deal per (destination, depart_date, return_date, departure_time)."""
     best: dict[tuple, FlightDeal] = {}
     for d in deals:
-        key = (d.destination_iata, d.depart_date, d.return_date)
+        key = (d.destination_iata, d.depart_date, d.return_date, d.outbound_departs)
         if key not in best or d.price_usd < best[key].price_usd:
             best[key] = d
-    return sorted(best.values(), key=lambda d: (d.depart_date, d.price_usd))
+    return sorted(best.values(), key=lambda d: (d.depart_date, d.destination_iata, d.outbound_departs))
 
 
 def _split_messages(deals: list[FlightDeal], header: str, footer: str) -> list[str]:

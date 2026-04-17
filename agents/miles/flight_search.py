@@ -48,11 +48,9 @@ class FlightDeal:
     airline: str
     outbound_departs: str      # "HH:MM"
     outbound_arrives: str
-    outbound_duration: str
     outbound_stops: int
     return_departs: str
     return_arrives: str
-    return_duration: str
 
 
 def _time_to_minutes(hhmm: str) -> int:
@@ -101,11 +99,9 @@ def _search_one(airport: dict, window: TripWindow) -> list[FlightDeal]:
             airline=r.airline,
             outbound_departs=r.outbound_departs,
             outbound_arrives=r.outbound_arrives,
-            outbound_duration=r.outbound_duration,
             outbound_stops=r.outbound_stops,
             return_departs=r.return_departs,
             return_arrives=r.return_arrives,
-            return_duration=r.return_duration,
         ))
     return deals
 

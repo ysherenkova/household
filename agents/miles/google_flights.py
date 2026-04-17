@@ -1,14 +1,19 @@
 """
 Alfred - Google Flights client
-Thin wrapper around the fast-flights library (no API key required).
+Bypasses fast-flights' broken HTML parser and reads flight data directly
+from aria-label attributes, which Google has kept stable.
 """
 
 import logging
 import random
+import re
 import time
 from dataclasses import dataclass, field
 
-from fast_flights import FlightData, Passengers, get_flights
+from fast_flights import FlightData, Passengers
+from fast_flights.core import fetch
+from fast_flights.filter import TFSData
+from selectolax.lexbor import LexborHTMLParser
 
 logger = logging.getLogger(__name__)
 
@@ -21,50 +26,44 @@ class RoundTripResult:
     return_date: str     # YYYY-MM-DD
     price_usd: int
     airline: str
-    # Outbound leg (the leg we can reliably time-filter)
     outbound_departs: str   # "HH:MM" 24-h
     outbound_arrives: str   # "HH:MM" 24-h
-    outbound_duration: str
     outbound_stops: int
-    # Return leg (if extractable)
     return_departs: str = "??"
     return_arrives: str = "??"
-    return_duration: str = ""
-    return_stops: int = -1
     raw_flights: list = field(default_factory=list, repr=False)
 
 
+# "at 6:00 AM on Friday" or "at 6:00 AM on Friday, April 24"
+_TIME_RE = re.compile(r"at (\d{1,2}:\d{2}\s*(?:AM|PM))", re.IGNORECASE)
+# "flight with Frontier"
+_AIRLINE_RE = re.compile(r"flight with ([^.]+)\.", re.IGNORECASE)
+# "From 414 US dollars"
+_PRICE_RE = re.compile(r"From (\d[\d,]*)\s+\w+ dollars", re.IGNORECASE)
+
+
 def _to_24h(time_str: str) -> str:
-    """Convert '6:30 PM', '6:30 PM on Fri, May 8', or '18:30' → '18:30'. Returns '??' on failure."""
-    if not time_str:
+    """'6:00 AM' → '06:00'. Returns '??' on failure."""
+    import datetime
+    try:
+        return datetime.datetime.strptime(time_str.strip().upper(), "%I:%M %p").strftime("%H:%M")
+    except ValueError:
         return "??"
-    import re, datetime
-    s = str(time_str).strip()
-    # Extract bare time from strings like "5:05 AM on Fri, May 8"
-    m = re.match(r"(\d{1,2}:\d{2}\s*(?:AM|PM))", s, re.IGNORECASE)
-    if m:
-        s = m.group(1).strip()
-    if "AM" in s.upper() or "PM" in s.upper():
-        for fmt in ("%I:%M %p", "%I:%M%p"):
-            try:
-                return datetime.datetime.strptime(s.upper(), fmt.upper()).strftime("%H:%M")
-            except ValueError:
-                continue
-    # Already 24-h or partial
-    parts = s.replace(".", ":").split(":")
-    if len(parts) >= 2:
-        try:
-            return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
-        except ValueError:
-            pass
-    return "??"
 
 
-def _parse_price(price_str: str) -> int:
-    if not price_str:
-        return 0
-    digits = "".join(c for c in str(price_str) if c.isdigit())
-    return int(digits) if digits else 0
+def _parse_aria(label: str) -> dict | None:
+    """Extract price, airline, departure and arrival from an item's aria-label."""
+    price_m   = _PRICE_RE.search(label)
+    airline_m = _AIRLINE_RE.search(label)
+    times     = _TIME_RE.findall(label)
+    if not price_m or len(times) < 2:
+        return None
+    return {
+        "price":    int(price_m.group(1).replace(",", "")),
+        "airline":  airline_m.group(1).strip() if airline_m else "?",
+        "departs":  _to_24h(times[0]),
+        "arrives":  _to_24h(times[1]),
+    }
 
 
 def search(
@@ -76,12 +75,12 @@ def search(
     children: int = 1,
 ) -> list[RoundTripResult]:
     """
-    Search Google Flights for round-trip options.
+    Search Google Flights for nonstop round-trip options.
     Returns an empty list on any error (rate-limit, no results, etc.).
     """
     time.sleep(random.uniform(0.15, 0.45))
     try:
-        result = get_flights(
+        tfs = TFSData.from_interface(
             flight_data=[
                 FlightData(date=outbound_date, from_airport=origin, to_airport=destination),
                 FlightData(date=return_date,   from_airport=destination, to_airport=origin),
@@ -94,28 +93,37 @@ def search(
                 infants_in_seat=0,
                 infants_on_lap=0,
             ),
-            fetch_mode="common",
             max_stops=0,
         )
+        params = {"tfs": tfs.as_b64().decode(), "hl": "en", "tfu": "EgQIABABIgA", "curr": ""}
+        res = fetch(params)
     except Exception as exc:
-        logger.debug("fast-flights %s→%s: %s", origin, destination, exc)
+        logger.debug("fetch %s→%s: %s", origin, destination, exc)
         return []
 
-    out = []
-    for f in result.flights or []:
-        price = _parse_price(f.price)
-        if price <= 0:
-            continue
-        out.append(RoundTripResult(
-            origin=origin,
-            destination=destination,
-            outbound_date=outbound_date,
-            return_date=return_date,
-            price_usd=price,
-            airline=f.name or "?",
-            outbound_departs=_to_24h(f.departure),
-            outbound_arrives=_to_24h(f.arrival),
-            outbound_duration=f.duration or "",
-            outbound_stops=0,  # max_stops=0 is passed to Google, so all results are nonstop
-        ))
-    return out
+    try:
+        parser = LexborHTMLParser(res.text)
+        out = []
+        for item in parser.css("ul.Rk10dc li"):
+            link = item.css_first(".JMc5Xc")
+            if not link:
+                continue
+            label = link.attributes.get("aria-label", "")
+            parsed = _parse_aria(label)
+            if not parsed or parsed["price"] <= 0:
+                continue
+            out.append(RoundTripResult(
+                origin=origin,
+                destination=destination,
+                outbound_date=outbound_date,
+                return_date=return_date,
+                price_usd=parsed["price"],
+                airline=parsed["airline"],
+                outbound_departs=parsed["departs"],
+                outbound_arrives=parsed["arrives"],
+                outbound_stops=0,
+            ))
+        return out
+    except Exception as exc:
+        logger.debug("parse %s→%s: %s", origin, destination, exc)
+        return []
