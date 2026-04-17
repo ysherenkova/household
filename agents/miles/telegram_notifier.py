@@ -50,12 +50,12 @@ def _deal_block(d: FlightDeal) -> str:
 
     airline_part = f" {d.airline}" if d.airline not in ("?", "") else ""
     time_known = d.outbound_departs not in ("??", "")
-    time_part = f"  ·  {d.outbound_departs}→{d.outbound_arrives}" if time_known else ""
+    time_str = f" {d.outbound_departs}→{d.outbound_arrives}" if time_known else ""
 
     return "\n".join([
-        f"📅 <b>{depart_fmt} – {return_fmt}</b>{holiday_tag}",
+        f"📅 <b>{depart_fmt}{time_str} – {return_fmt}</b>{holiday_tag}",
         f"{flag} <b>{d.destination_city}</b>  ({d.destination_iata})",
-        f"💰 ${d.price_usd}  ·  ✈️{airline_part}  ·  {stops}{time_part}",
+        f"💰 ${d.price_usd}  ·  ✈️{airline_part}  ·  {stops}",
         f'🔗 <a href="{url}">Book on Google Flights</a>',
         "",
     ])
