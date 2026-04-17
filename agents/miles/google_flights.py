@@ -103,7 +103,7 @@ def search(
 
     try:
         parser = LexborHTMLParser(res.text)
-        out = []
+        seen: dict[tuple, RoundTripResult] = {}
         for item in parser.css("ul.Rk10dc li"):
             link = item.css_first(".JMc5Xc")
             if not link:
@@ -112,7 +112,7 @@ def search(
             parsed = _parse_aria(label)
             if not parsed or parsed["price"] <= 0:
                 continue
-            out.append(RoundTripResult(
+            r = RoundTripResult(
                 origin=origin,
                 destination=destination,
                 outbound_date=outbound_date,
@@ -122,8 +122,12 @@ def search(
                 outbound_departs=parsed["departs"],
                 outbound_arrives=parsed["arrives"],
                 outbound_stops=0,
-            ))
-        return out
+            )
+            # Same flight can appear in both "best" and "other" sections at different prices
+            key = (parsed["airline"], parsed["departs"], parsed["arrives"])
+            if key not in seen or r.price_usd < seen[key].price_usd:
+                seen[key] = r
+        return list(seen.values())
     except Exception as exc:
         logger.debug("parse %s→%s: %s", origin, destination, exc)
         return []

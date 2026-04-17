@@ -120,7 +120,7 @@ def _deduplicate(deals: list[FlightDeal]) -> list[FlightDeal]:
     """Keep only the cheapest deal per (destination, depart_date, return_date, departure_time)."""
     best: dict[tuple, FlightDeal] = {}
     for d in deals:
-        key = (d.destination_iata, d.depart_date, d.return_date, d.outbound_departs)
+        key = (d.destination_iata, d.depart_date, d.return_date, d.outbound_departs, d.airline)
         if key not in best or d.price_usd < best[key].price_usd:
             best[key] = d
     return sorted(best.values(), key=lambda d: (d.depart_date, d.destination_iata, d.outbound_departs))
