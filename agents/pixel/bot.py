@@ -79,7 +79,7 @@ def _search_movie(title: str) -> dict | None:
 
 def _trigger_miles(args: str = "") -> bool:
     """Trigger the Miles workflow via GitHub API. Returns True on success."""
-    token = os.environ.get("GITHUB_PAT", "")
+    token = os.environ.get("GHUB_PAT", "")
     if not token:
         logger.warning("GITHUB_PAT not set — cannot trigger Miles workflow")
         return False
