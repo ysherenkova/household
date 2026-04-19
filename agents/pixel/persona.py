@@ -67,7 +67,7 @@ def help_message() -> str:
         "  /miles extended — next 8 weekends",
         "  /miles 2026-05-02 — specific weekend",
         "",
-        SIGN_OFF,
+        "🎩 <i>Alfred, Sherenkov household orchestrator</i>",
     ])
 
 
