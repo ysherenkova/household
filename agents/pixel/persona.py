@@ -63,7 +63,7 @@ def help_message() -> str:
         "  <i>we watched Moana and loved it</i> — save feedback",
         "",
         "✈️ <b>Miles</b> — flight search",
-        "  /miles — nearest 2 weekends",
+        "  /miles — next weekend (7+ days out)",
         "  /miles extended — next 8 weekends",
         "  /miles 2026-05-02 — specific weekend",
         "",

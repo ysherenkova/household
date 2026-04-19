@@ -84,6 +84,9 @@ def get_trip_windows(num_weeks: int = 8, start_friday: date | None = None) -> li
     else:
         today = date.today()
         days_to_friday = (4 - today.weekday()) % 7 or 7
+        # Require at least 7 days' notice — if the nearest Friday is sooner, skip to the next one
+        if days_to_friday < 7:
+            days_to_friday += 7
         first_friday = today + timedelta(days=days_to_friday)
 
     windows: list[TripWindow] = []

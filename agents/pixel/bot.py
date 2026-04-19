@@ -15,6 +15,7 @@ Miles commands (flight search):
 Free text → Pixel feedback: "we watched Moana and loved it"
 """
 
+import io
 import logging
 import os
 import re
@@ -61,6 +62,54 @@ def _get_updates(offset: int) -> list[dict]:
     return data.get("result", [])
 
 
+# ── Voice transcription ────────────────────────────────────────────────────────
+
+def _transcribe_voice(file_id: str) -> str | None:
+    """Download a Telegram voice file and transcribe it with OpenAI Whisper."""
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    if not openai_key:
+        logger.warning("OPENAI_API_KEY not set — cannot transcribe voice")
+        return None
+
+    # Step 1: get the download path from Telegram
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    info = _tg("getFile", file_id=file_id)
+    file_path = info.get("result", {}).get("file_path")
+    if not file_path:
+        logger.error("getFile returned no file_path for %s", file_id)
+        return None
+
+    # Step 2: download the OGG audio
+    download_url = f"https://api.telegram.org/file/bot{token}/{file_path}"
+    resp = requests.get(download_url, timeout=30)
+    if resp.status_code != 200:
+        logger.error("Voice download failed: HTTP %d", resp.status_code)
+        return None
+
+    # Step 3: transcribe with Whisper
+    import openai
+    client = openai.OpenAI(api_key=openai_key)
+    audio = io.BytesIO(resp.content)
+    audio.name = "voice.ogg"
+    try:
+        result = client.audio.transcriptions.create(model="whisper-1", file=audio)
+        text = result.text.strip()
+        logger.info("Voice transcribed: %r", text)
+        return text
+    except Exception as exc:
+        logger.error("Whisper transcription failed: %s", exc)
+        return None
+
+
+def _normalize_voice(text: str) -> str:
+    """Coerce spoken commands to slash-command form for the router."""
+    lower = text.lower().strip(" .,!?")
+    for cmd in ("miles", "pixel", "help"):
+        if lower.startswith(cmd):
+            return "/" + lower
+    return text
+
+
 # ── TMDb search ────────────────────────────────────────────────────────────────
 
 def _search_movie(title: str) -> dict | None:
@@ -81,19 +130,24 @@ def _trigger_miles(args: str = "") -> bool:
     """Trigger the Miles workflow via GitHub API. Returns True on success."""
     token = os.environ.get("GHUB_PAT", "")
     if not token:
-        logger.warning("GITHUB_PAT not set — cannot trigger Miles workflow")
+        logger.error("GHUB_PAT not set — cannot trigger Miles workflow")
         return False
-    resp = requests.post(
-        f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/{GITHUB_WORKFLOW}/dispatches",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        json={"ref": "main", "inputs": {"args": args.strip()}},
-        timeout=10,
-    )
-    return resp.status_code == 204
+    try:
+        resp = requests.post(
+            f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/{GITHUB_WORKFLOW}/dispatches",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json={"ref": "main", "inputs": {"args": args.strip()}},
+            timeout=10,
+        )
+        logger.info("GitHub dispatch: status=%d body=%s", resp.status_code, resp.text[:200])
+        return resp.status_code == 204
+    except Exception as exc:
+        logger.error("GitHub dispatch failed: %s", exc)
+        return False
 
 
 # ── Command handlers ───────────────────────────────────────────────────────────
@@ -141,7 +195,7 @@ def handle_miles(chat_id: int, text: str) -> None:
         scope = f"weekend of {arg}"
     elif arg == "":
         workflow_args = ""
-        scope = "nearest 2 weekends"
+        scope = "next weekend (7+ days out)"
     else:
         _send(chat_id, (
             "✈️ <b>Miles — usage:</b>\n"
@@ -152,18 +206,22 @@ def handle_miles(chat_id: int, text: str) -> None:
         ))
         return
 
+    # Acknowledge immediately so the user knows we received the command
+    _send(chat_id, (
+        f"✈️ Got it! Miles is searching <b>{scope}</b>.\n\n"
+        f"Results will arrive in a few minutes. 🎩 <i>Alfred</i>"
+    ))
+    logger.info("Miles: triggering workflow args=%r", workflow_args)
+
     ok = _trigger_miles(workflow_args)
     if ok:
-        _send(chat_id, (
-            f"✈️ Miles is on it — searching <b>{scope}</b>.\n\n"
-            f"Results will arrive in a few minutes. 🎩 <i>Alfred</i>"
-        ))
-        logger.info("Miles triggered: args=%r", workflow_args)
+        logger.info("Miles workflow triggered successfully: args=%r", workflow_args)
     else:
         _send(chat_id, (
-            "⚠️ Couldn't reach Miles right now. "
-            "Check GitHub Actions or try again.\n\n🎩 <i>Alfred</i>"
+            "⚠️ Heads up — Miles couldn't reach GitHub Actions. "
+            "The search may not have started. Check logs or try again.\n\n🎩 <i>Alfred</i>"
         ))
+        logger.error("Miles workflow trigger FAILED: args=%r", workflow_args)
 
 
 def handle_feedback(chat_id: int, text: str) -> bool:
@@ -209,11 +267,26 @@ def main() -> None:
             offset = update["update_id"] + 1
             msg     = update.get("message", {})
             chat_id = msg.get("chat", {}).get("id")
-            text    = (msg.get("text") or "").strip()
 
-            if not chat_id or not text:
+            if not chat_id:
                 continue
             if allowed_chats and chat_id not in allowed_chats:
+                continue
+
+            # Voice message → transcribe and route as text
+            voice = msg.get("voice")
+            if voice:
+                logger.info("← [%s] voice message (duration=%ss)", chat_id, voice.get("duration"))
+                text = _transcribe_voice(voice["file_id"])
+                if text is None:
+                    _send(chat_id, "🎙 Sorry, I couldn't transcribe that. Please type your request.\n\n🎩 <i>Alfred</i>")
+                    continue
+                _send(chat_id, f"🎙 I heard: <i>\"{text}\"</i>")
+                text = _normalize_voice(text)
+            else:
+                text = (msg.get("text") or "").strip()
+
+            if not text:
                 continue
 
             logger.info("← [%s] %s", chat_id, text[:80])
