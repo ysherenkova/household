@@ -6,7 +6,12 @@ on:
     # EDT (Mar–Nov): UTC-4 → 00:00 UTC
     # EST (Nov–Mar): UTC-5 → 01:00 UTC (1h off, acceptable)
     - cron: "0 0 * * *"
-  workflow_dispatch:   # manual trigger from GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "Extra args for main.py (e.g. --extended, --date 2026-05-02)"
+        required: false
+        default: ""
 
 jobs:
   miles-flight-survey:
@@ -32,4 +37,4 @@ jobs:
           TELEGRAM_BOT_TOKEN:        ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID_YULIIA:   ${{ secrets.TELEGRAM_CHAT_ID_YULIIA }}
           TELEGRAM_CHAT_ID_IVAN:     ${{ secrets.TELEGRAM_CHAT_ID_IVAN }}
-        run: python main.py
+        run: python main.py ${{ github.event.inputs.args }}

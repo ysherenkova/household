@@ -1,0 +1,25 @@
+# Pixel — Fly.io config
+# Deploy: fly launch --no-deploy (first time) then fly deploy
+
+app = "sherenkov-pixel"
+primary_region = "iad"   # Washington DC — closest to Atlanta
+
+[build]
+
+[env]
+  PYTHONUNBUFFERED = "1"
+
+# Secrets set via: fly secrets set TELEGRAM_BOT_TOKEN=... etc.
+# Required secrets:
+#   TELEGRAM_BOT_TOKEN
+#   TELEGRAM_CHAT_ID_YULIIA
+#   TELEGRAM_CHAT_ID_IVAN
+#   TMDB_API_TOKEN
+
+[[services]]
+  # No HTTP port needed — this is a pure polling bot
+
+[mounts]
+  source      = "pixel_data"
+  destination = "/app"
+  # history.json is written here and persists across deploys
